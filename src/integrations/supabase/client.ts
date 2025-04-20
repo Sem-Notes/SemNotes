@@ -2,10 +2,19 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://hmrkhhibftmubrpejipl.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtcmtoaGliZnRtdWJycGVqaXBsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ1NjA1NDcsImV4cCI6MjA2MDEzNjU0N30.P-tjM9oTm8Jb3QJ__VoaR79HH8tqTBWcaG83AEaT1EY";
+// Get environment variables from .env file
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Check if environment variables are defined
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  console.error("Supabase URL and Anon Key must be defined in .env file");
+}
+
+export const supabase = createClient<Database>(
+  SUPABASE_URL as string, 
+  SUPABASE_PUBLISHABLE_KEY as string
+);

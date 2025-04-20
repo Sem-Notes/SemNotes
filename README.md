@@ -4,6 +4,23 @@
 
 **URL**: https://lovable.dev/projects/00fa4fa7-2277-455d-bfa6-981426391b1f
 
+## Environment Variables
+
+This project uses environment variables for configuration. 
+
+To set up your local environment:
+
+1. Copy the `.env.example` file to a new file named `.env`:
+   ```sh
+   cp .env.example .env
+   ```
+
+2. Fill in the actual values in the `.env` file:
+   - `VITE_SUPABASE_URL`: Your Supabase project URL
+   - `VITE_SUPABASE_ANON_KEY`: Your Supabase anonymous key
+
+These environment variables are used for connecting to Supabase services.
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
