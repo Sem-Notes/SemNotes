@@ -2,6 +2,53 @@ import { safeSupabase } from '@/integrations/supabase/safeClient';
 import { Student, Subject, Bookmark } from './types';
 
 /**
+ * Debug function to check Supabase connection details
+ */
+export async function debugSupabaseConnection() {
+  try {
+    // Get the URL from the client
+    const url = (safeSupabase as any).supabaseUrl || 'Unknown';
+    console.log(`🔍 Supabase URL: ${url}`);
+    
+    // Check if this is a valid URL
+    const isValidUrl = url.startsWith('http') && url.includes('supabase.co');
+    console.log(`🔌 Is valid URL: ${isValidUrl}`);
+    
+    // Test simple connection
+    console.log(`🧪 Testing database connection...`);
+    const startTime = Date.now();
+    
+    try {
+      const { data, error } = await safeSupabase
+        .from('students')
+        .select('count', { count: 'exact', head: true })
+        .limit(1);
+      
+      const endTime = Date.now();
+      const elapsed = endTime - startTime;
+      
+      if (error) {
+        console.error(`❌ Database query failed after ${elapsed}ms:`, error.message);
+        console.error(`📋 Error details:`, JSON.stringify(error));
+      } else {
+        console.log(`✅ Database query successful (${elapsed}ms)`);
+      }
+    } catch (error) {
+      console.error(`❌ Database query exception:`, error);
+    }
+    
+    // Additional environment info
+    console.log(`🌐 Browser online: ${navigator.onLine}`);
+    console.log(`📱 User agent: ${navigator.userAgent.substring(0, 50)}...`);
+    
+    return true;
+  } catch (error) {
+    console.error("❌ Debug connection error:", error);
+    return false;
+  }
+}
+
+/**
  * Test Supabase connection - a lightweight call to check if Supabase is responsive
  */
 export async function testSupabaseConnection(): Promise<boolean> {

@@ -10,7 +10,7 @@ import Navbar from '@/components/Navbar';
 import { useAuth } from '@/auth/AuthContext';
 import { fetchUserBookmarks, isBookmarked, toggleBookmark } from '@/lib/database-fixed';
 import { Subject, Student, Bookmark as BookmarkType } from '@/lib/types';
-import { fetchStudentProfile, createOrUpdateStudentProfile, fetchSubjectsForStudent, testSupabaseConnection } from '@/lib/supabase-utils';
+import { fetchStudentProfile, createOrUpdateStudentProfile, fetchSubjectsForStudent, testSupabaseConnection, debugSupabaseConnection } from '@/lib/supabase-utils';
 import { safeSupabase } from '@/integrations/supabase/safeClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ProfileEditForm from '@/components/ProfileEditForm';
@@ -398,31 +398,54 @@ const Home = () => {
     
     toast.loading("Refreshing your subject list", { id: 'manual-refresh', duration: 5000 });
     
-    // Invalidate and refetch subjects
-    queryClient.invalidateQueries({
-      queryKey: ["subjects", userProfile?.id],
-    });
-    
-    if (userProfile?.id) {
-      // Direct fetch for immediate loading
-      fetchSubjectsForStudent(userProfile.id)
-        .then((subjects) => {
+    // First, test the connection
+    debugSupabaseConnection().then(async (isConnected) => {
+      if (!isConnected) {
+        toast.error("Connection issue detected", { 
+          id: 'manual-refresh', 
+          description: "We're having trouble connecting to our database. Please check your connection."
+        });
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // If connected, invalidate and refetch subjects
+      queryClient.invalidateQueries({
+        queryKey: ["subjects", userProfile?.id],
+      });
+      
+      if (userProfile?.id) {
+        // Direct fetch for immediate loading
+        try {
+          const subjects = await fetchSubjectsForStudent(userProfile.id);
+          
           if (subjects && subjects.length > 0) {
             toast.success(`${subjects.length} subjects loaded`, { id: 'manual-refresh', duration: 3000 });
+            // Force update the cache
+            queryClient.setQueryData(['subjects'], subjects);
+          } else {
+            toast.error("No subjects found", { 
+              id: 'manual-refresh', 
+              description: "We couldn't find any subjects for your profile. Please check your academic details."
+            });
           }
-          // Always reset loading state
-          setIsRefreshing(false);
-        })
-        .catch((error) => {
+        } catch (error) {
           console.error("Error refreshing subjects:", error);
-          toast.error("Failed to load subjects", { id: 'manual-refresh', duration: 3000 });
-          // Always reset loading state
-          setIsRefreshing(false);
+          toast.error("Failed to load subjects", { 
+            id: 'manual-refresh', 
+            description: error.message || "An unknown error occurred" 
+          });
+        }
+      } else {
+        toast.error("Profile not loaded", { 
+          id: 'manual-refresh', 
+          description: "Please wait for your profile to load or try refreshing the page." 
         });
-    } else {
-      // If no profile, still reset loading state
+      }
+      
+      // Always reset loading state
       setIsRefreshing(false);
-    }
+    });
   }, [queryClient, userProfile, isEmergencyMode, attemptReconnection]);
 
   // Memoized function to check if a subject is bookmarked
@@ -521,6 +544,34 @@ const Home = () => {
   
   // Check if user is admin - only show admin features if is_admin is true
   const isAdmin = userProfile?.is_admin === true;
+
+  // Additional debug effect to check Supabase connection when loading fails
+  useEffect(() => {
+    // Only run this if we're experiencing loading issues
+    const hasLoadingIssue = 
+      (userProfile && subjectsQuery.data && subjectsQuery.data.length === 0 && !subjectsQuery.isFetching) ||
+      (profileError) || 
+      (subjectsQuery.error);
+      
+    if (hasLoadingIssue) {
+      console.log("🔎 Detected loading issues - running Supabase connection diagnostics");
+      debugSupabaseConnection().then(success => {
+        console.log(`🔍 Connection diagnostics complete: ${success ? 'success' : 'issues detected'}`);
+        
+        // If we're having trouble with Supabase but browser is online, show a special toast
+        if (!success && navigator.onLine) {
+          toast.error("Connection issues detected", {
+            description: "We're having trouble connecting to our database. Please try refreshing the page.",
+            action: {
+              label: "Refresh",
+              onClick: () => window.location.reload()
+            },
+            duration: 10000
+          });
+        }
+      });
+    }
+  }, [userProfile, subjectsQuery.data, subjectsQuery.isFetching, profileError, subjectsQuery.error]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -630,6 +681,27 @@ const Home = () => {
                     Admin Dashboard
                   </Button>
                 </Link>
+              )}
+              {isAdmin && (
+                <Button 
+                  variant="outline" 
+                  className="text-yellow-400 border-yellow-400/30 hover:bg-yellow-500/10"
+                  onClick={() => {
+                    debugSupabaseConnection().then(success => {
+                      if (success) {
+                        toast.success("Connection test successful", {
+                          description: "Your database connection is working correctly. Try refreshing data."
+                        });
+                      } else {
+                        toast.error("Connection issues detected", {
+                          description: "Please check your .env file and restart the application."
+                        });
+                      }
+                    });
+                  }}
+                >
+                  <AlertCircle className="mr-2 h-4 w-4" /> Check Connection
+                </Button>
               )}
             <Link to="/upload">
               <Button className="bg-primary">
