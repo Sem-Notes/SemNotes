@@ -1,80 +1,117 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight, FileUp, Check, X, Upload as UploadIcon } from 'lucide-react';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/auth/AuthContext';
-import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 
-// Define validation schema
-const noteFormSchema = z.object({
-  title: z.string().min(3, "Title is required and must be at least 3 characters"),
+const uploadFormSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters"),
+  subject_id: z.string().min(1, "Subject is required"),
+  unit_number: z.number().min(1).max(5),
   description: z.string().min(10, "Description must be at least 10 characters"),
-  branch: z.string().min(1, "Branch is required"),
-  semester: z.string().min(1, "Semester is required"),
-  subject: z.string().min(1, "Subject is required"),
-  academic_year: z.string().min(1, "Academic year is required"),
-  unit_number: z.string().min(1, "Unit number is required"),
+  tags: z.string().optional(),
+  academic_year: z.number().min(1).max(4),
+  semester: z.number().min(1).max(2),
 });
 
-type NoteFormValues = z.infer<typeof noteFormSchema>;
+type UploadFormData = z.infer<typeof uploadFormSchema>;
+
+type SubjectType = {
+  id: string;
+  name: string;
+  branch: string;
+  academic_year: number;
+  semester: number;
+  is_common?: boolean;
+};
+
+type StudentProfile = {
+  academic_year: number | null;
+  semester: number | null;
+  branch: string | null;
+};
 
 const Upload = () => {
   const [step, setStep] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const form = useForm<NoteFormValues>({
-    resolver: zodResolver(noteFormSchema),
+  const form = useForm<UploadFormData>({
+    resolver: zodResolver(uploadFormSchema),
     defaultValues: {
-      title: "",
-      description: "",
-      branch: "",
-      semester: "",
-      subject: "",
-      academic_year: "",
-      unit_number: "1", // Default to unit 1
+      title: '',
+      subject_id: '',
+      unit_number: 1,
+      description: '',
+      tags: '',
+      academic_year: 1,
+      semester: 1,
     }
   });
 
-  const validateFile = (selectedFile: File | null): boolean => {
-    setFileError(null);
-    
-    if (!selectedFile) {
-      setFileError("Please select a file");
-      return false;
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('students')
+        .select('academic_year, semester, branch')
+        .eq('id', user?.id)
+        .single();
+      
+      if (error) throw error;
+      return data as StudentProfile;
+    },
+    enabled: !!user?.id
+  });
+
+  useEffect(() => {
+    if (userProfile) {
+      form.setValue('academic_year', userProfile.academic_year || 1);
+      form.setValue('semester', userProfile.semester || 1);
     }
-    
-    // Check file type
-    if (selectedFile.type !== 'application/pdf') {
-      setFileError("Only PDF files are accepted");
-      return false;
+  }, [userProfile, form]);
+
+  const { data: subjects, refetch: refetchSubjects } = useQuery<SubjectType[]>({
+    queryKey: ['uploadSubjects', form.watch('academic_year'), form.watch('semester'), userProfile?.branch],
+    queryFn: async () => {
+      if (!userProfile?.branch || !form.watch('academic_year') || !form.watch('semester')) {
+        return [] as SubjectType[];
+      }
+      
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('academic_year', form.watch('academic_year'))
+        .eq('semester', form.watch('semester'))
+        .or(`branch.eq.${userProfile?.branch},is_common.eq.true`);
+      
+      if (error) throw error;
+      return (data || []) as SubjectType[];
+    },
+    enabled: !!userProfile && !!form.watch('academic_year') && !!form.watch('semester')
+  });
+
+  useEffect(() => {
+    if (form.watch('academic_year') && form.watch('semester')) {
+      refetchSubjects();
     }
-    
-    // Check file size (20MB max)
-    if (selectedFile.size > 20 * 1024 * 1024) {
-      setFileError("File size must be less than 20MB");
-      return false;
-    }
-    
-    return true;
-  };
+  }, [form.watch('academic_year'), form.watch('semester')]);
 
   const handleFileSelect = (selectedFile: File) => {
-    if (validateFile(selectedFile)) {
-      setFile(selectedFile);
-    }
+    setFile(selectedFile);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -92,102 +129,69 @@ const Upload = () => {
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFile = e.dataTransfer.files[0];
-      handleFileSelect(droppedFile);
+      if (droppedFile.type === 'application/pdf') {
+        handleFileSelect(droppedFile);
+      } else {
+        toast.error("Only PDF files are accepted");
+      }
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFileSelect(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      if (selectedFile.type === 'application/pdf') {
+        handleFileSelect(selectedFile);
+      } else {
+        toast.error("Only PDF files are accepted");
+      }
     }
   };
 
-  const nextStep = () => {
-    if (step === 1 && !file) {
-      setFileError("Please select a file before proceeding");
-      return;
-    }
-    setStep(step + 1);
-  };
-  
+  const nextStep = () => setStep(step + 1);
   const prevStep = () => setStep(step - 1);
 
-  const onSubmit = async (values: NoteFormValues) => {
-    if (!file || !user) return;
-    
+  const onSubmit = async (data: z.infer<typeof uploadFormSchema>) => {
+    if (!file) {
+      toast.error("Please upload a PDF file");
+      return;
+    }
+
     setIsSubmitting(true);
-    
     try {
-      // 1. Upload file to storage
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-      const filePath = `notes/${user.id}/${fileName}`;
+      const fileName = `${user?.id}-${Date.now()}.${fileExt}`;
+      const filePath = `notes/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
         .from('notes')
         .upload(filePath, file);
-        
-      if (uploadError) throw uploadError;
       
-      // Get the URL for the uploaded file
-      const { data: fileData } = supabase.storage
+      if (uploadError) throw uploadError;
+
+      const { data: fileUrl } = supabase.storage
         .from('notes')
         .getPublicUrl(filePath);
-        
-      if (!fileData) throw new Error("Failed to get file URL");
-      
-      // 2. Find or create subject
-      const { data: subjectData, error: subjectError } = await supabase
-        .from('subjects')
-        .select('id')
-        .eq('name', values.subject)
-        .eq('branch', values.branch)
-        .eq('semester', parseInt(values.semester))
-        .eq('academic_year', parseInt(values.academic_year))
-        .single();
-        
-      let subjectId = subjectData?.id;
-      
-      if (subjectError || !subjectId) {
-        // Create a new subject
-        const { data: newSubject, error: createSubjectError } = await supabase
-          .from('subjects')
-          .insert({
-            name: values.subject,
-            branch: values.branch,
-            semester: parseInt(values.semester),
-            academic_year: parseInt(values.academic_year)
-          })
-          .select('id')
-          .single();
-          
-        if (createSubjectError || !newSubject) throw createSubjectError;
-        
-        subjectId = newSubject.id;
-      }
-      
-      // 3. Create note with approval status
-      const { error: noteError } = await supabase
+
+      const { error: insertError } = await supabase
         .from('notes')
         .insert({
-          title: values.title,
-          description: values.description,
-          file_url: fileData.publicUrl,
-          subject_id: subjectId,
-          student_id: user.id,
-          unit_number: parseInt(values.unit_number),
-          approval_status: 'pending'
+          title: data.title,
+          description: data.description,
+          student_id: user?.id,
+          subject_id: data.subject_id,
+          unit_number: data.unit_number,
+          file_url: fileUrl.publicUrl,
+          is_approved: false,
         });
-        
-      if (noteError) throw noteError;
       
-      // Success!
-      toast.success("Note submitted for approval!");
-      navigate('/home');
+      if (insertError) throw insertError;
       
+      toast.success("Note uploaded successfully and pending approval");
+      navigate('/profile');
     } catch (error: any) {
-      console.error("Error uploading note:", error);
-      toast.error(`Failed to upload note: ${error.message}`);
+      console.error("Upload error:", error);
+      toast.error(`Error uploading note: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -235,7 +239,7 @@ const Upload = () => {
               <CardDescription>
                 {step === 1 && "Upload a PDF file containing your notes"}
                 {step === 2 && "Provide information about your notes"}
-                {step === 3 && "Review your submission and submit for approval"}
+                {step === 3 && "Review your submission"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -243,17 +247,16 @@ const Upload = () => {
                 <div>
                   <div 
                     className={`border-2 border-dashed rounded-lg p-8 text-center ${
-                      isDragging ? 'border-primary bg-primary/10' : fileError ? 'border-red-500 bg-red-500/5' : 'border-muted-foreground/20'
-                    } transition-colors cursor-pointer`}
+                      isDragging ? 'border-primary bg-primary/10' : 'border-muted-foreground/20'
+                    } transition-colors`}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    onClick={() => document.getElementById('file-upload')?.click()}
                   >
                     {!file ? (
                       <div className="flex flex-col items-center justify-center py-4">
-                        <FileUp className={`h-12 w-12 mb-4 ${fileError ? 'text-red-500' : 'text-muted-foreground'}`} />
-                        <p className="text-lg font-medium mb-2">Click or drag & drop to upload</p>
+                        <FileUp className="h-12 w-12 text-muted-foreground mb-4" />
+                        <p className="text-lg font-medium mb-2">Drag & drop or browse files</p>
                         <p className="text-muted-foreground mb-4">Upload PDF files up to 20MB</p>
                         
                         <input 
@@ -263,13 +266,11 @@ const Upload = () => {
                           className="hidden" 
                           onChange={handleFileChange}
                         />
-                        <Button className="cursor-pointer">
-                          <UploadIcon className="h-4 w-4 mr-2" /> Browse Files
-                        </Button>
-                        
-                        {fileError && (
-                          <p className="mt-3 text-sm text-red-500">{fileError}</p>
-                        )}
+                        <label htmlFor="file-upload">
+                          <Button className="cursor-pointer">
+                            <UploadIcon className="h-4 w-4 mr-2" /> Browse Files
+                          </Button>
+                        </label>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center">
@@ -286,23 +287,14 @@ const Upload = () => {
                             </div>
                             <button 
                               className="text-muted-foreground hover:text-destructive transition-colors" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFile(null);
-                              }}
+                              onClick={() => setFile(null)}
                             >
                               <X className="h-5 w-5" />
                             </button>
                           </div>
                         </div>
                         
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFile(null);
-                            document.getElementById('file-upload')?.click();
-                          }}
-                        >
+                        <Button onClick={() => setFile(null)}>
                           Change File
                         </Button>
                       </div>
@@ -345,30 +337,6 @@ const Upload = () => {
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField
-                          name="branch"
-                          control={form.control}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Branch/Department</FormLabel>
-                              <FormControl>
-                                <select 
-                                  className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                  {...field}
-                                >
-                                  <option value="">Select Branch</option>
-                                  <option value="CSE">Computer Science</option>
-                                  <option value="ECE">Electronics Engineering</option>
-                                  <option value="ME">Mechanical Engineering</option>
-                                  <option value="CE">Civil Engineering</option>
-                                  <option value="IT">Information Technology</option>
-                                  <option value="EE">Electrical Engineering</option>
-                                </select>
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
                           name="academic_year"
                           control={form.control}
                           render={({ field }) => (
@@ -377,21 +345,20 @@ const Upload = () => {
                               <FormControl>
                                 <select 
                                   className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                  {...field}
+                                  value={field.value}
+                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
                                 >
-                                  <option value="">Select Year</option>
-                                  <option value="1">First Year</option>
-                                  <option value="2">Second Year</option>
-                                  <option value="3">Third Year</option>
-                                  <option value="4">Fourth Year</option>
+                                  {[1, 2, 3, 4].map((year) => (
+                                    <option key={year} value={year}>
+                                      Year {year}
+                                    </option>
+                                  ))}
                                 </select>
                               </FormControl>
                             </FormItem>
                           )}
                         />
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        
                         <FormField
                           name="semester"
                           control={form.control}
@@ -401,34 +368,14 @@ const Upload = () => {
                               <FormControl>
                                 <select 
                                   className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                  {...field}
+                                  value={field.value}
+                                  onChange={(e) => field.onChange(parseInt(e.target.value))}
                                 >
-                                  <option value="">Select Semester</option>
-                                  <option value="1">Semester 1</option>
-                                  <option value="2">Semester 2</option>
-                                </select>
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      
-                        <FormField
-                          name="unit_number"
-                          control={form.control}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Unit Number</FormLabel>
-                              <FormControl>
-                                <select 
-                                  className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                  {...field}
-                                >
-                                  <option value="1">Unit 1</option>
-                                  <option value="2">Unit 2</option>
-                                  <option value="3">Unit 3</option>
-                                  <option value="4">Unit 4</option>
-                                  <option value="5">Unit 5</option>
-                                  <option value="6">Unit 6</option>
+                                  {[1, 2].map((sem) => (
+                                    <option key={sem} value={sem}>
+                                      Semester {sem}
+                                    </option>
+                                  ))}
                                 </select>
                               </FormControl>
                             </FormItem>
@@ -437,18 +384,46 @@ const Upload = () => {
                       </div>
                       
                       <FormField
-                        name="subject"
+                        name="subject_id"
                         control={form.control}
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Subject</FormLabel>
                             <FormControl>
-                              <input 
-                                type="text" 
-                                placeholder="e.g., Data Structures & Algorithms" 
+                              <select 
                                 className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 {...field}
-                              />
+                              >
+                                <option value="">Select Subject</option>
+                                {subjects?.map((subject) => (
+                                  <option key={subject.id} value={subject.id}>
+                                    {subject.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        name="unit_number"
+                        control={form.control}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Unit Number</FormLabel>
+                            <FormControl>
+                              <select 
+                                className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                value={field.value}
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                              >
+                                {[1, 2, 3, 4, 5].map((unit) => (
+                                  <option key={unit} value={unit}>
+                                    Unit {unit}
+                                  </option>
+                                ))}
+                              </select>
                             </FormControl>
                           </FormItem>
                         )}
@@ -462,14 +437,32 @@ const Upload = () => {
                             <FormLabel>Description</FormLabel>
                             <FormControl>
                               <Textarea 
-                                placeholder="Add a description for your notes..." 
-                                className="bg-secondary/20 border-secondary/30 min-h-[120px]"
+                                placeholder="Provide a brief description of what these notes cover..." 
+                                className="bg-secondary/20 border border-secondary/30 focus:ring-primary/30"
                                 {...field}
                               />
                             </FormControl>
                             <FormDescription>
-                              Provide a brief description of what your notes cover.
+                              Include topics covered, special features, or any other relevant information.
                             </FormDescription>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        name="tags"
+                        control={form.control}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Tags (comma separated)</FormLabel>
+                            <FormControl>
+                              <input 
+                                type="text" 
+                                placeholder="e.g., algorithms, data structures, sorting" 
+                                className="w-full px-3 py-2 bg-secondary/20 border border-secondary/30 rounded focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                {...field}
+                              />
+                            </FormControl>
                           </FormItem>
                         )}
                       />
@@ -477,15 +470,16 @@ const Upload = () => {
                   </Form>
                   
                   <div className="flex justify-between mt-6">
-                    <Button 
-                      variant="outline" 
-                      onClick={prevStep}
-                    >
+                    <Button variant="outline" onClick={prevStep}>
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                     <Button 
                       onClick={nextStep}
-                      disabled={!form.formState.isValid}
+                      disabled={
+                        !form.getValues().title ||
+                        !form.getValues().subject_id ||
+                        !form.getValues().description
+                      }
                     >
                       Next <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
@@ -495,81 +489,79 @@ const Upload = () => {
               
               {step === 3 && (
                 <div>
-                  <div className="space-y-4">
-                    <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
-                      <h3 className="text-lg font-medium mb-4">Review Information</h3>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Title:</p>
-                          <p className="font-medium">{form.getValues('title')}</p>
-                        </div>
-                    
-                        <div>
-                          <p className="text-muted-foreground">Subject:</p>
-                          <p className="font-medium">{form.getValues('subject')}</p>
-                        </div>
-                      
-                        <div>
-                          <p className="text-muted-foreground">Branch:</p>
-                          <p className="font-medium">{form.getValues('branch')}</p>
-                        </div>
-                        
-                        <div>
-                          <p className="text-muted-foreground">Year:</p>
-                          <p className="font-medium">Year {form.getValues('academic_year')}</p>
-                        </div>
-                        
-                        <div>
-                          <p className="text-muted-foreground">Semester:</p>
-                          <p className="font-medium">Semester {form.getValues('semester')}</p>
-                        </div>
-                      
-                        <div>
-                          <p className="text-muted-foreground">Unit:</p>
-                          <p className="font-medium">Unit {form.getValues('unit_number')}</p>
-                        </div>
-                        
-                        <div className="col-span-2">
-                          <p className="text-muted-foreground">File:</p>
-                          <p className="font-medium truncate">{file?.name}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4">
-                        <p className="text-muted-foreground">Description:</p>
-                        <p className="text-sm">{form.getValues('description')}</p>
+                  <div className="space-y-6">
+                    <div className="space-y-1">
+                      <h3 className="font-medium">Document</h3>
+                      <div className="bg-black/30 p-3 rounded-md flex items-center">
+                        <FileUp className="h-5 w-5 mr-3 text-primary" />
+                        <span>{file?.name}</span>
                       </div>
                     </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="font-medium mb-1">Title</h3>
+                        <p className="bg-black/30 p-3 rounded-md">{form.getValues().title}</p>
+                      </div>
                       
-                    <div className="bg-yellow-500/10 p-4 rounded-lg border border-yellow-500/20 mt-4">
-                      <div className="flex items-start gap-3">
-                        <div className="bg-yellow-500/20 p-2 rounded-full">
-                          <Check className="h-5 w-5 text-yellow-500" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h3 className="font-medium mb-1">Academic Year</h3>
+                          <p className="bg-black/30 p-3 rounded-md">Year {form.getValues().academic_year}</p>
                         </div>
                         <div>
-                          <h4 className="font-medium text-yellow-500">Awaiting Approval</h4>
-                          <p className="text-sm mt-1">Your notes will be reviewed by an admin before being published.</p>
+                          <h3 className="font-medium mb-1">Semester</h3>
+                          <p className="bg-black/30 p-3 rounded-md">Semester {form.getValues().semester}</p>
                         </div>
                       </div>
+                      
+                      <div>
+                        <h3 className="font-medium mb-1">Subject</h3>
+                        <p className="bg-black/30 p-3 rounded-md">
+                          {subjects?.find(s => s.id === form.getValues().subject_id)?.name || "Not selected"}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="font-medium mb-1">Unit</h3>
+                        <p className="bg-black/30 p-3 rounded-md">Unit {form.getValues().unit_number}</p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="font-medium mb-1">Description</h3>
+                        <p className="bg-black/30 p-3 rounded-md">{form.getValues().description}</p>
+                      </div>
+                      
+                      {form.getValues().tags && (
+                        <div>
+                          <h3 className="font-medium mb-1">Tags</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {form.getValues().tags.split(',').map((tag, index) => (
+                              <span key={index} className="bg-primary/20 text-primary px-2 py-1 rounded text-sm">{tag.trim()}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   <div className="flex justify-between mt-6">
-                    <Button 
-                      variant="outline" 
-                      onClick={prevStep}
-                    >
+                    <Button variant="outline" onClick={prevStep}>
                       <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
                     <Button 
-                      onClick={form.handleSubmit(onSubmit)}
+                      onClick={() => onSubmit(form.getValues())}
                       disabled={isSubmitting}
                     >
                       {isSubmitting ? (
-                        <>Uploading...</>
+                        <>
+                          <div className="animate-spin w-4 h-4 mr-2 border-2 border-t-transparent border-white rounded-full" />
+                          Submitting...
+                        </>
                       ) : (
-                        <>Submit for Approval <Check className="ml-2 h-4 w-4" /></>
+                        <>
+                          <Check className="mr-2 h-4 w-4" /> Submit
+                        </>
                       )}
                     </Button>
                   </div>

@@ -1,295 +1,120 @@
-import React, { useState } from 'react';
+
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Navbar from '@/components/Navbar';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Check, X, UserCircle, Book, Clock, BarChart2, BookOpen, Layers } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/auth/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { AlertCircle, Edit, Trash, Plus, RefreshCw } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
-import { Navigate, useNavigate } from 'react-router-dom';
-
-// Types
-type Student = {
-  id: string;
-  full_name: string;
-  email: string;
-  branch: string;
-  academic_year: number;
-  semester: number;
-  is_admin: boolean;
-  created_at: string;
-};
-
-type Subject = {
-  id: string;
-  name: string;
-  branch: string;
-  academic_year: number;
-  semester: number;
-  is_common: boolean;
-  created_at: string;
-};
+import { useNavigate } from 'react-router-dom';
+import AdminNotesList from '@/components/admin/AdminNotesList';
+import AdminUsersList from '@/components/admin/AdminUsersList';
+import AdminDashboard from '@/components/admin/AdminDashboard';
 
 const Admin = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('subjects');
-  
-  // Check if user is authenticated and is admin
-  const { data: userProfile, isLoading: profileLoading } = useQuery({
-    queryKey: ['userProfile', user?.id],
+
+  // Check if user is admin
+  const { data: isAdmin, isLoading: checkingAdmin } = useQuery({
+    queryKey: ['isAdmin', user?.id],
     queryFn: async () => {
-      if (!user?.id) throw new Error('User not authenticated');
-      
       const { data, error } = await supabase
         .from('students')
-        .select('*')
-        .eq('id', user.id)
+        .select('is_admin')
+        .eq('id', user?.id)
         .single();
       
       if (error) throw error;
-      if (!data) throw new Error('No profile found');
-      return data;
+      return data?.is_admin || false;
     },
-    enabled: !!user?.id,
   });
-  
-  // Fetch all students
-  const { 
-    data: students, 
-    isLoading: studentsLoading, 
-    error: studentsError,
-    refetch: refetchStudents
-  } = useQuery({
-    queryKey: ['allStudents'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as Student[];
-    },
-    enabled: !!userProfile?.is_admin,
-  });
-  
-  // Fetch all subjects
-  const { 
-    data: subjects, 
-    isLoading: subjectsLoading, 
-    error: subjectsError,
-    refetch: refetchSubjects
-  } = useQuery({
-    queryKey: ['allSubjects'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('subjects')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as Subject[];
-    },
-    enabled: !!userProfile?.is_admin,
-  });
-  
+
   // If not admin, redirect to home
-  if (!profileLoading && (!userProfile || !userProfile.is_admin)) {
-    return <Navigate to="/home" replace />;
+  React.useEffect(() => {
+    if (!checkingAdmin && !isAdmin) {
+      navigate('/home');
+    }
+  }, [isAdmin, checkingAdmin, navigate]);
+
+  if (checkingAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
+      </div>
+    );
   }
-  
-  // Force refresh data
-  const handleRefreshData = () => {
-    queryClient.invalidateQueries({ queryKey: ['allStudents'] });
-    queryClient.invalidateQueries({ queryKey: ['allSubjects'] });
-    toast.success('Refreshing data...');
-  };
-  
+
+  if (!isAdmin) {
+    return null; // Will redirect via useEffect
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Navbar />
       
       <main className="container mx-auto px-4 pt-24 pb-16">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gradient mb-4">Admin Dashboard</h1>
-          <p className="text-muted-foreground mb-6">
-            Manage subjects, users, and application settings
-          </p>
-          
-          <div className="flex justify-between items-center mb-6">
-            <Tabs defaultValue="subjects" className="w-full" onValueChange={setActiveTab}>
-              <TabsList className="grid grid-cols-2 w-[400px]">
-                <TabsTrigger value="subjects">Subjects</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
-              </TabsList>
-              
-              <div className="mt-6">
-                <TabsContent value="subjects">
-                  <Card>
-                    <CardHeader>
-                      <div className="flex justify-between items-center">
-                        <CardTitle>All Subjects</CardTitle>
-                        <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={handleRefreshData}
-                          >
-                            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-                          </Button>
-                          <Button size="sm">
-                            <Plus className="h-4 w-4 mr-2" /> Add Subject
-                          </Button>
-                        </div>
-                      </div>
-                      <CardDescription>
-                        View and manage all subjects in the system
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {subjectsLoading ? (
-                        <div className="space-y-4">
-                          {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-12 w-full" />
-                          ))}
-                        </div>
-                      ) : subjectsError ? (
-                        <div className="text-center py-4">
-                          <AlertCircle className="h-8 w-8 mx-auto text-red-400 mb-2" />
-                          <p className="text-red-400">Failed to load subjects</p>
-                        </div>
-                      ) : subjects && subjects.length > 0 ? (
-                        <div className="border rounded-md">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Branch</TableHead>
-                                <TableHead>Year</TableHead>
-                                <TableHead>Semester</TableHead>
-                                <TableHead>Common</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {subjects.map((subject) => (
-                                <TableRow key={subject.id}>
-                                  <TableCell className="font-medium">{subject.name}</TableCell>
-                                  <TableCell>{subject.branch}</TableCell>
-                                  <TableCell>{subject.academic_year}</TableCell>
-                                  <TableCell>{subject.semester}</TableCell>
-                                  <TableCell>{subject.is_common ? 'Yes' : 'No'}</TableCell>
-                                  <TableCell className="text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                      <Button variant="ghost" size="icon">
-                                        <Edit className="h-4 w-4" />
-                                      </Button>
-                                      <Button variant="ghost" size="icon" className="text-red-400">
-                                        <Trash className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <p className="text-muted-foreground">No subjects found</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                
-                <TabsContent value="users">
-                  <Card>
-                    <CardHeader>
-                      <div className="flex justify-between items-center">
-                        <CardTitle>All Users</CardTitle>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={handleRefreshData}
-                        >
-                          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-                        </Button>
-                      </div>
-                      <CardDescription>
-                        View and manage all users in the system
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {studentsLoading ? (
-                        <div className="space-y-4">
-                          {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-12 w-full" />
-                          ))}
-                        </div>
-                      ) : studentsError ? (
-                        <div className="text-center py-4">
-                          <AlertCircle className="h-8 w-8 mx-auto text-red-400 mb-2" />
-                          <p className="text-red-400">Failed to load users</p>
-                        </div>
-                      ) : students && students.length > 0 ? (
-                        <div className="border rounded-md">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Branch</TableHead>
-                                <TableHead>Year</TableHead>
-                                <TableHead>Semester</TableHead>
-                                <TableHead>Admin</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {students.map((student) => (
-                                <TableRow key={student.id}>
-                                  <TableCell className="font-medium">{student.full_name || 'No name'}</TableCell>
-                                  <TableCell>{student.email || 'No email'}</TableCell>
-                                  <TableCell>{student.branch || 'N/A'}</TableCell>
-                                  <TableCell>{student.academic_year || 'N/A'}</TableCell>
-                                  <TableCell>{student.semester || 'N/A'}</TableCell>
-                                  <TableCell>{student.is_admin ? 'Yes' : 'No'}</TableCell>
-                                  <TableCell className="text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                      <Button variant="ghost" size="icon">
-                                        <Edit className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <p className="text-muted-foreground">No users found</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </div>
-            </Tabs>
-          </div>
+          <h1 className="text-3xl font-bold text-gradient mb-2">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Manage users, review notes, and view analytics</p>
         </div>
+        
+        <Tabs defaultValue="dashboard">
+          <TabsList className="w-full bg-secondary/10 border border-secondary/30 mb-8">
+            <TabsTrigger value="dashboard" className="flex-1 data-[state=active]:bg-primary/30">
+              <BarChart2 className="h-4 w-4 mr-2" /> Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="notes" className="flex-1 data-[state=active]:bg-primary/30">
+              <BookOpen className="h-4 w-4 mr-2" /> Notes Approval
+            </TabsTrigger>
+            <TabsTrigger value="users" className="flex-1 data-[state=active]:bg-primary/30">
+              <UserCircle className="h-4 w-4 mr-2" /> Users
+            </TabsTrigger>
+            <TabsTrigger value="subjects" className="flex-1 data-[state=active]:bg-primary/30">
+              <Layers className="h-4 w-4 mr-2" /> Subjects
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="dashboard">
+            <AdminDashboard />
+          </TabsContent>
+          
+          <TabsContent value="notes">
+            <AdminNotesList />
+          </TabsContent>
+          
+          <TabsContent value="users">
+            <AdminUsersList />
+          </TabsContent>
+          
+          <TabsContent value="subjects">
+            <div className="grid grid-cols-1 gap-6">
+              <Card className="border border-white/10 bg-black/40 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex justify-between items-center">
+                    <span>Manage Subjects</span>
+                    <Button size="sm">
+                      <Book className="h-4 w-4 mr-2" /> Add Subject
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    Add, edit, or remove subjects from the platform
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-center py-8 text-muted-foreground">
+                    Subject management functionality coming soon
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
 };
 
-export default Admin; 
+export default Admin;

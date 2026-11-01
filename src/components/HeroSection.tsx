@@ -1,3 +1,4 @@
+
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Book3D from './Book3D';
@@ -27,7 +28,7 @@ const HeroSection = () => {
         <div className="w-full md:w-1/2 text-center md:text-left md:pl-16">
           <motion.h1 
             ref={titleRef} 
-            className="text-4xl md:text-5xl font-bold mb-6 tracking-tight flex flex-col md:flex-row items-center justify-center md:justify-start gap-3"
+            className="text-5xl md:text-5xl lg:text-5xl font-bold mb-6 tracking-tight flex items-center justify-center md:justify-start gap-3 whitespace-nowrap overflow-hidden"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
@@ -51,11 +52,11 @@ const HeroSection = () => {
               wrapper="span"
               speed={50}
               repeat={Infinity}
-              className="text-white inline-block min-h-[40px]"
+              className="text-white inline-block"
             />
           </motion.h1>
           
-          <p className="text-gray-300 mb-8 text-lg max-w-xl mx-auto md:mx-0 fade-in-delay-1">
+          <p className="text-gray-300 mb-8 text-lg max-w-xl fade-in-delay-1">
             The smart way to organize, share, and collaborate on your academic journey. Join the future of student collaboration.
           </p>
           

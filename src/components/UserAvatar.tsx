@@ -1,35 +1,46 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/auth/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
-interface UserAvatarProps {
-  size?: 'sm' | 'md' | 'lg';
-}
-
-const UserAvatar = ({ size = 'sm' }: UserAvatarProps) => {
+const UserAvatar = () => {
   const { user } = useAuth();
   
-  // Get user's initials for avatar fallback - simplified version without queries
+  const { data: profile } = useQuery({
+    queryKey: ['userProfile', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('id', user?.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
+  
   const getInitials = () => {
-    if (user?.user_metadata?.full_name) {
-      const nameParts = user.user_metadata.full_name.split(' ');
-      if (nameParts.length > 1) {
-        return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
-      }
-      return user.user_metadata.full_name.substring(0, 2).toUpperCase();
-    } else if (user?.email) {
-      return user.email.charAt(0).toUpperCase();
+    if (profile?.full_name) {
+      return profile.full_name
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
     }
-    return 'U';
-  };
-
-  const sizeClasses = {
-    sm: "h-8 w-8",
-    md: "h-10 w-10",
-    lg: "h-16 w-16"
+    if (user?.email) return user.email.charAt(0).toUpperCase();
+    return '?';
   };
 
   return (
-    <Avatar className={`border-2 border-primary/20 ${sizeClasses[size]}`}>
+    <Avatar className="h-8 w-8 border-2 border-primary/20 cursor-pointer hover:border-primary/50 transition-all">
+      <AvatarImage
+        src={user?.user_metadata?.avatar_url}
+        alt={profile?.full_name || user?.email || 'User avatar'}
+      />
       <AvatarFallback className="bg-primary/10 text-primary">
         {getInitials()}
       </AvatarFallback>

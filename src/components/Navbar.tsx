@@ -1,21 +1,23 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, Home, Upload as UploadIcon, User, Menu, X, LogOut, BarChart2 } from 'lucide-react';
+import { BookOpen, Home, Upload as UploadIcon, User, Menu, X, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '@/auth/AuthContext';
 import UserAvatar from '@/components/UserAvatar';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,95 +26,40 @@ const Navbar = () => {
     };
     
     window.addEventListener('scroll', handleScroll);
-    
-    // Call it once on mount to set initial state based on scroll position
-    handleScroll();
-    
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, []); // Empty dependency array ensures this only runs once on mount
+  }, []);
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
   };
 
-  // Use useCallback to memoize the handleSignOut function
-  const handleSignOut = useCallback(async () => {
-    try {
-      await signOut();
-      // The redirect to homepage is handled by the auth state change listener
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
-  }, [signOut]); // Only depends on signOut
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   const isLandingPage = location.pathname === '/';
-  
-  // Memoize the dropdown menu to prevent infinite re-renders
-  const userDropdownMenu = useMemo(() => {
-    if (!user) return null;
-    
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center outline-none" aria-label="User menu">
-            <UserAvatar />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <div className="px-2 py-1.5 text-sm font-medium text-muted-foreground">
-            {user.email}
-          </div>
-          <DropdownMenuSeparator />
-          
-          <DropdownMenuItem asChild>
-            <Link to="/profile" className="cursor-pointer">
-              <User className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </Link>
-          </DropdownMenuItem>
-          
-          {isAdmin && (
-            <DropdownMenuItem asChild>
-              <Link to="/admin" className="cursor-pointer">
-                <BarChart2 className="mr-2 h-4 w-4" />
-                <span>Admin Panel</span>
-              </Link>
-            </DropdownMenuItem>
-          )}
-          
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleSignOut} className="text-red-500 cursor-pointer">
-            <LogOut className="mr-2 h-4 w-4" />
-            <span>Sign out</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }, [user, isAdmin, handleSignOut]);
 
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
       scrolled || !isLandingPage ? 'py-2 glass-effect' : 'py-4 bg-transparent'
     }`}>
       <div className="container mx-auto px-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-              <span className="text-white font-bold text-xl">S</span>
-            </div>
-            <span className="font-bold text-xl text-white">SemNotes</span>
-          </Link>
-        </div>
+        <Link to="/" className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+            <span className="text-white font-bold text-xl">S</span>
+          </div>
+          <span className="font-bold text-xl text-white">SemNotes</span>
+        </Link>
         
         <div className="hidden md:flex items-center gap-8">
           {!isLandingPage && (
             <>
               <NavLink to="/home" label="Home" icon={<Home className="h-4 w-4" />} />
-              <NavLink to="/upload" label="Upload" icon={<UploadIcon className="h-4 w-4" />} />
               <NavLink to="/explore" label="Explore" icon={<BookOpen className="h-4 w-4" />} />
-              <NavLink to="/profile" label="Profile" icon={<User className="h-4 w-4" />} />
+              <NavLink to="/upload" label="Upload" icon={<UploadIcon className="h-4 w-4" />} />
             </>
           )}
           
@@ -127,33 +74,80 @@ const Navbar = () => {
         </div>
         
         <div className="flex items-center gap-4">
-          {user ? (
-            <div className="flex items-center gap-3">
-              {isLandingPage && (
-                <Link to="/home">
-                  <button className="hidden md:block px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 transition-all">
-                    Dashboard
-                  </button>
-                </Link>
+          {isLandingPage ? (
+            <>
+              {user ? (
+                <>
+                  <Link to="/home">
+                    <button className="hidden md:block px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 transition-all">
+                      Dashboard
+                    </button>
+                  </Link>
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="focus:outline-none">
+                        <UserAvatar />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56 bg-background border border-white/10">
+                        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => navigate('/profile')}>
+                          <User className="mr-2 h-4 w-4" />
+                          Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate('/home')}>
+                          <Home className="mr-2 h-4 w-4" />
+                          Dashboard
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleSignOut} className="text-red-500 focus:text-red-500">
+                          <LogOut className="mr-2 h-4 w-4" />
+                          Sign Out
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Link to="/auth">
+                    <button className="hidden md:block px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 transition-all">
+                      Login
+                    </button>
+                  </Link>
+                  <Link to="/auth">
+                    <button className="px-4 py-2 rounded-full bg-primary text-white hover:bg-primary/90 transition-all shadow-lg shadow-primary/25">
+                      Get Started
+                    </button>
+                  </Link>
+                </>
               )}
-              
-              {userDropdownMenu}
-            </div>
+            </>
           ) : (
-            isLandingPage && (
-              <>
-                <Link to="/auth">
-                  <button className="hidden md:block px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 transition-all">
-                    Login
-                  </button>
-                </Link>
-                <Link to="/auth">
-                  <button className="px-4 py-2 rounded-full bg-primary text-white hover:bg-primary/90 transition-all shadow-lg shadow-primary/25">
-                    Get Started
-                  </button>
-                </Link>
-              </>
-            )
+            <div className="hidden md:flex gap-2 items-center">
+              <DropdownMenu>
+                <DropdownMenuTrigger className="focus:outline-none">
+                  <UserAvatar />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 bg-background border border-white/10">
+                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/profile')}>
+                    <User className="mr-2 h-4 w-4" />
+                    Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/settings')}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-red-500 focus:text-red-500">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
           
           <button className="md:hidden text-white" onClick={toggleMobileMenu}>
@@ -177,14 +171,6 @@ const Navbar = () => {
                       <Link to="/home" onClick={toggleMobileMenu}>
                         <button className="py-2 w-full text-center text-primary">Dashboard</button>
                       </Link>
-                      <Link to="/profile" onClick={toggleMobileMenu}>
-                        <button className="py-2 w-full text-center text-white">Profile</button>
-                      </Link>
-                      {isAdmin && (
-                        <Link to="/admin" onClick={toggleMobileMenu}>
-                          <button className="py-2 w-full text-center text-white">Admin Panel</button>
-                        </Link>
-                      )}
                       <button 
                         onClick={() => {
                           handleSignOut();
@@ -213,20 +199,15 @@ const Navbar = () => {
                 <Link to="/home" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
                   <Home className="h-5 w-5" /> Home
                 </Link>
-                <Link to="/profile" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
-                  <User className="h-5 w-5" /> Profile
+                <Link to="/explore" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
+                  <BookOpen className="h-5 w-5" /> Explore
                 </Link>
                 <Link to="/upload" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
                   <UploadIcon className="h-5 w-5" /> Upload
                 </Link>
-                <Link to="/explore" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
-                  <BookOpen className="h-5 w-5" /> Explore
+                <Link to="/profile" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
+                  <User className="h-5 w-5" /> Profile
                 </Link>
-                {isAdmin && (
-                  <Link to="/admin" className="py-2 flex items-center gap-2" onClick={toggleMobileMenu}>
-                    <BarChart2 className="h-5 w-5" /> Admin Panel
-                  </Link>
-                )}
                 {user && (
                   <button 
                     onClick={() => {
